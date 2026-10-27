@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/Ayushmangit/redisGO/store"
 )
@@ -137,9 +136,6 @@ func (s *Store) Incr(key string) (int, error) {
 		current = v
 	}
 	current += 1
-
-	time.Sleep(time.Microsecond)
-
 	currentString := strconv.Itoa(current)
 	s.data[key] = currentString
 

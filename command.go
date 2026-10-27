@@ -24,7 +24,7 @@ func dispatch(s store.Storer, c Command) error {
 		_, err := s.Incr(c.Key)
 		return err
 	default:
-		return fmt.Errorf("Invalid command", c.OP)
+		return fmt.Errorf("Invalid command :[%v]", c.OP)
 	}
 	return nil
 }
