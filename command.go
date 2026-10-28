@@ -19,7 +19,7 @@ func dispatch(s store.Storer, c Command) error {
 	case "GET":
 		s.Get(c.Key)
 	case "SET":
-		return s.Set(c.Key, c.Value)
+		return s.Set(c.Key, c.Value, 0)
 	case "INCR":
 		_, err := s.Incr(c.Key)
 		return err

@@ -42,11 +42,11 @@ func (m *MetricsMiddleware) Get(key string) (string, error) {
 	return val, err
 }
 
-func (m *MetricsMiddleware) Set(key, val string) error {
+func (m *MetricsMiddleware) Set(key, val string, ttl time.Duration) error {
 	start := time.Now()
 	m.setCalls += 1
 	m.totalSetLatency += time.Since(start)
-	return m.inner.Set(key, val)
+	return m.inner.Set(key, val, ttl)
 }
 
 func (m *MetricsMiddleware) Delete(key string) {

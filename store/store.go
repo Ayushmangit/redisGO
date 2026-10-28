@@ -3,17 +3,19 @@ package store
 import (
 	"encoding/base64"
 	"errors"
+	"time"
 )
 
 var (
 	ErrKeyNotFound  = errors.New("key not found")
 	ErrInvalidKey   = errors.New("invalid key ' ' is not allowed ")
 	ErrCapacityFull = errors.New("reached max capacity")
+	ErrInvalidTTL   = errors.New("invalid ttl")
 )
 
 type Storer interface {
 	Get(key string) (string, error)
-	Set(key string, value string) error
+	Set(key string, value string, ttl time.Duration) error
 	Keys() []string
 	Delete(key string)
 	Len() int
@@ -22,9 +24,9 @@ type Storer interface {
 	Incr(key string) (int, error)
 }
 
-func SetKeyWithEncryption(store Storer, key, val string) (string, error) {
+func SetKeyWithEncryption(store Storer, key, val string, ttl time.Duration) (string, error) {
 	encoded := base64.StdEncoding.EncodeToString([]byte(val))
-	if err := store.Set(key, encoded); err != nil {
+	if err := store.Set(key, encoded, ttl); err != nil {
 		return "", err
 	}
 	store.Len()

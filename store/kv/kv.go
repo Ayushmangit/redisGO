@@ -5,31 +5,37 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/Ayushmangit/redisGO/store"
 )
 
 type Store struct {
 	mu      sync.RWMutex
-	data    map[string]string
+	data    map[string]TTLentry
+	ttl     time.Duration
 	MaxSize int
 }
+type TTLentry struct {
+	val    string
+	expiry time.Time
+}
 
-func NewStore(MaxSize int) *Store {
+func NewStore(MaxSize int, ttl time.Duration) *Store {
 	return &Store{
-		data:    make(map[string]string),
+		data:    make(map[string]TTLentry),
 		MaxSize: MaxSize,
+		ttl:     ttl,
 	}
 }
 
 func (s *Store) Clone() *Store {
-	cloneMap := make(map[string]string)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	cloneMap := make(map[string]TTLentry)
 	for k, v := range s.data {
 		cloneMap[k] = v
 	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 
 	cloneStore := &Store{
 		data:    cloneMap,
@@ -50,19 +56,22 @@ func (s *Store) Keys() []string {
 }
 
 func (s *Store) Get(key string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if key == "" {
 		return "", store.ErrInvalidKey
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	val, ok := s.data[key]
-	if !ok {
+
+	entry, ok := s.data[key]
+	if !ok || time.Now().After(entry.expiry) && !entry.expiry.IsZero() {
+		delete(s.data, key)
 		return "", store.ErrKeyNotFound
 	}
-	return val, nil
+
+	return entry.val, nil
 }
 
-func (s *Store) Set(key, val string) error {
+func (s *Store) Set(key, val string, ttl time.Duration) error {
 	if key == "" {
 		return store.ErrInvalidKey
 	}
@@ -74,8 +83,19 @@ func (s *Store) Set(key, val string) error {
 	if s.MaxSize > 0 && len(s.data) >= s.MaxSize && !exists {
 		return fmt.Errorf("Set(%q): %w", key, store.ErrCapacityFull)
 	}
+	var expiry time.Time
+	if ttl > 0 {
+		expiry = time.Now().Add(ttl)
+	} else if ttl == 0 {
+		expiry = time.Time{}
+	} else {
+		return fmt.Errorf("TTL: invalid ttl %w", store.ErrInvalidTTL)
+	}
 
-	s.data[key] = val
+	s.data[key] = TTLentry{
+		val:    val,
+		expiry: expiry,
+	}
 	return nil
 }
 
@@ -113,31 +133,48 @@ func (s *Store) Pop(key string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	val, ok := s.data[key]
+	entry, ok := s.data[key]
 	if ok {
 		delete(s.data, key)
 	}
 
-	return val, ok
+	return entry.val, ok
 }
 
 func (s *Store) Incr(key string) (int, error) {
 	if key == "" {
 		return 0, store.ErrInvalidKey
 	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	current := 0
-	if raw, ok := s.data[key]; ok {
-		v, err := strconv.Atoi(raw)
-		if err != nil {
-			return 0, fmt.Errorf("INCR %q: %w", key, err)
-		}
-		current = v
+	var expiry time.Time
+	if s.ttl > 0 {
+		expiry = time.Now().Add(s.ttl)
 	}
-	current += 1
-	currentString := strconv.Itoa(current)
-	s.data[key] = currentString
+
+	if entry, ok := s.data[key]; ok {
+		if !entry.expiry.IsZero() && !time.Now().Before(entry.expiry) {
+			delete(s.data, key)
+		} else {
+			v, err := strconv.Atoi(entry.val)
+			if err != nil {
+				return 0, fmt.Errorf("INCR %q: %w", key, err)
+			}
+
+			current = v
+			expiry = entry.expiry
+		}
+	}
+
+	current++
+
+	s.data[key] = TTLentry{
+		val:    strconv.Itoa(current),
+		expiry: expiry,
+	}
 
 	return current, nil
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/Ayushmangit/redisGO/store"
 )
@@ -30,9 +31,9 @@ func (l *LoggingMiddleware) Get(key string) (string, error) {
 	return val, err
 }
 
-func (l *LoggingMiddleware) Set(key, val string) error {
+func (l *LoggingMiddleware) Set(key, val string, ttl time.Duration) error {
 	l.logger.Printf("SET %q", key) // side effect
-	return l.inner.Set(key, val)
+	return l.inner.Set(key, val, ttl)
 }
 
 func (l *LoggingMiddleware) Delete(key string) {

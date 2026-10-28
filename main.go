@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Ayushmangit/redisGO/store/kv"
 )
@@ -24,9 +25,9 @@ import (
 // }
 
 func main() {
-	s := kv.NewStore(20)
+	s := kv.NewStore(20, 5*time.Second)
 
-	s.Set("pageviews", "0")
+	s.Set("pageviews", "0", 0)
 	const hits = 1000
 
 	cmds := make([]Command, hits)
