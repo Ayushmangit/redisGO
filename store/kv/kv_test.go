@@ -413,3 +413,583 @@ func TestIncrPreservesTTL(t *testing.T) {
 		t.Fatalf("Get() error = %v, want %v", err, store.ErrKeyNotFound)
 	}
 }
+
+func TestKeys_IgnoresExpiredKeys(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("active", "1", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("expired", "2", 50*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("another", "3", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	got := s.Keys()
+	want := []string{"active", "another"}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Keys() = %v, want %v", got, want)
+	}
+}
+
+func TestLen_IgnoresExpiredKeys(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("active", "1", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Set("expired", "2", 50*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	got := s.Len()
+	want := 1
+
+	if got != want {
+		t.Fatalf("Len() = %d, want %d", got, want)
+	}
+}
+
+func TestDelete_ExistingKey(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("name", "redis", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Delete("name"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+
+	_, err := s.Get("name")
+	if !errors.Is(err, store.ErrKeyNotFound) {
+		t.Fatalf("Get() error = %v, want %v", err, store.ErrKeyNotFound)
+	}
+}
+
+func TestDelete_MissingKey(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Delete("missing"); err != nil {
+		t.Fatalf("Delete() error = %v, want nil", err)
+	}
+}
+
+func TestPop_ExistingKey(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("name", "redis", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Pop("name")
+	if err != nil {
+		t.Fatalf("Pop() error = %v", err)
+	}
+	if got != "redis" {
+		t.Fatalf("Pop() = %q, want %q", got, "redis")
+	}
+
+	_, err = s.Get("name")
+	if !errors.Is(err, store.ErrKeyNotFound) {
+		t.Fatalf("Get() error = %v, want %v", err, store.ErrKeyNotFound)
+	}
+}
+
+func TestPop_MissingKey(t *testing.T) {
+	s := NewStore(10, 0)
+
+	_, err := s.Pop("missing")
+	if !errors.Is(err, store.ErrKeyNotFound) {
+		t.Fatalf("Pop() error = %v, want %v", err, store.ErrKeyNotFound)
+	}
+}
+
+func TestPop_ExpiredKey(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("temporary", "value", 50*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	_, err := s.Pop("temporary")
+	if !errors.Is(err, store.ErrKeyNotFound) {
+		t.Fatalf("Pop() error = %v, want %v", err, store.ErrKeyNotFound)
+	}
+}
+
+func TestRename_ExistingKey(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("old", "redis", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Rename("old", "new"); err != nil {
+		t.Fatalf("Rename() error = %v", err)
+	}
+
+	got, err := s.Get("new")
+	if err != nil {
+		t.Fatalf("Get(new) error = %v", err)
+	}
+	if got != "redis" {
+		t.Fatalf("Get(new) = %q, want %q", got, "redis")
+	}
+
+	_, err = s.Get("old")
+	if !errors.Is(err, store.ErrKeyNotFound) {
+		t.Fatalf("Get(old) error = %v, want %v", err, store.ErrKeyNotFound)
+	}
+}
+
+func TestRename_DestinationKeyExists(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("old", "redis", 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("new", "existing", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Rename("old", "new"); err != nil {
+		t.Fatalf("Rename() error = %v", err)
+	}
+
+	got, err := s.Get("new")
+	if err != nil {
+		t.Fatalf("Get(new) error = %v", err)
+	}
+	if got != "redis" {
+		t.Fatalf("Get(new) = %q, want %q", got, "redis")
+	}
+
+	_, err = s.Get("old")
+	if !errors.Is(err, store.ErrKeyNotFound) {
+		t.Fatalf("Get(old) error = %v, want %v", err, store.ErrKeyNotFound)
+	}
+}
+
+func TestRename_PreservesTTL(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("old", "redis", 300*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(150 * time.Millisecond)
+
+	if err := s.Rename("old", "new"); err != nil {
+		t.Fatalf("Rename() error = %v", err)
+	}
+
+	// The renamed key should still exist shortly after the rename.
+	got, err := s.Get("new")
+	if err != nil {
+		t.Fatalf("Get(new) error = %v", err)
+	}
+	if got != "redis" {
+		t.Fatalf("Get(new) = %q, want %q", got, "redis")
+	}
+
+	// Wait beyond the original expiration time.
+	time.Sleep(200 * time.Millisecond)
+
+	_, err = s.Get("new")
+	if !errors.Is(err, store.ErrKeyNotFound) {
+		t.Fatalf("Get(new) error = %v, want %v", err, store.ErrKeyNotFound)
+	}
+}
+
+func TestRename_MissingSourceKey(t *testing.T) {
+	s := NewStore(10, 0)
+
+	err := s.Rename("missing", "new")
+	if !errors.Is(err, store.ErrKeyNotFound) {
+		t.Fatalf("Rename() error = %v, want %v", err, store.ErrKeyNotFound)
+	}
+
+	_, err = s.Get("new")
+	if !errors.Is(err, store.ErrKeyNotFound) {
+		t.Fatalf("Get(new) error = %v, want %v", err, store.ErrKeyNotFound)
+	}
+}
+
+func TestRename_ExpiredSourceKey(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("old", "redis", 50*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	err := s.Rename("old", "new")
+	if !errors.Is(err, store.ErrKeyNotFound) {
+		t.Fatalf("Rename() error = %v, want %v", err, store.ErrKeyNotFound)
+	}
+
+	_, err = s.Get("new")
+	if !errors.Is(err, store.ErrKeyNotFound) {
+		t.Fatalf("Get(new) error = %v, want %v", err, store.ErrKeyNotFound)
+	}
+}
+
+func TestRename_SameKey(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("key", "redis", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Rename("key", "key"); err != nil {
+		t.Fatalf("Rename() error = %v", err)
+	}
+
+	got, err := s.Get("key")
+	if err != nil {
+		t.Fatalf("Get(key) error = %v", err)
+	}
+
+	if got != "redis" {
+		t.Fatalf("Get(key) = %q, want %q", got, "redis")
+	}
+}
+
+func TestClone_IndependentCopy(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("name", "redis", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	cloned := s.Clone()
+
+	// The clone should contain the original value.
+	got, err := cloned.Get("name")
+	if err != nil {
+		t.Fatalf("Clone.Get(name) error = %v", err)
+	}
+	if got != "redis" {
+		t.Fatalf("Clone.Get(name) = %q, want %q", got, "redis")
+	}
+
+	// Changing the original must not change the clone.
+	if err := s.Set("name", "changed", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err = cloned.Get("name")
+	if err != nil {
+		t.Fatalf("Clone.Get(name) after original update: %v", err)
+	}
+	if got != "redis" {
+		t.Fatalf("Clone.Get(name) = %q, want %q", got, "redis")
+	}
+}
+
+func TestClone_PreservesTTL(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("temporary", "redis", 300*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(150 * time.Millisecond)
+
+	cloned := s.Clone()
+
+	// The cloned key should still exist.
+	got, err := cloned.Get("temporary")
+	if err != nil {
+		t.Fatalf("Clone.Get() error = %v", err)
+	}
+	if got != "redis" {
+		t.Fatalf("Clone.Get() = %q, want %q", got, "redis")
+	}
+
+	// Both stores should respect the original expiration time.
+	time.Sleep(200 * time.Millisecond)
+
+	_, err = cloned.Get("temporary")
+	if !errors.Is(err, store.ErrKeyNotFound) {
+		t.Fatalf("Clone.Get() error = %v, want %v", err, store.ErrKeyNotFound)
+	}
+}
+
+func TestClone_PreservesConfiguration(t *testing.T) {
+	defaultTTL := 5 * time.Second
+	s := NewStore(20, defaultTTL)
+
+	cloned := s.Clone()
+
+	if cloned.MaxSize != s.MaxSize {
+		t.Errorf("Clone.MaxSize = %d, want %d", cloned.MaxSize, s.MaxSize)
+	}
+
+	if cloned.ttl != s.ttl {
+		t.Errorf("Clone.ttl = %v, want %v", cloned.ttl, s.ttl)
+	}
+}
+
+func TestSet_CapacityFull(t *testing.T) {
+	s := NewStore(1, 0)
+
+	if err := s.Set("first", "one", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	err := s.Set("second", "two", 0)
+	if !errors.Is(err, store.ErrCapacityFull) {
+		t.Fatalf("Set() error = %v, want %v", err, store.ErrCapacityFull)
+	}
+
+	got, err := s.Get("first")
+	if err != nil {
+		t.Fatalf("Get(first) error = %v", err)
+	}
+	if got != "one" {
+		t.Fatalf("Get(first) = %q, want %q", got, "one")
+	}
+}
+
+func TestSet_ExpiredKeyDoesNotBlockCapacity(t *testing.T) {
+	s := NewStore(1, 0)
+
+	if err := s.Set("temporary", "old", 50*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	if err := s.Set("new", "value", 0); err != nil {
+		t.Fatalf("Set() error = %v, want nil", err)
+	}
+
+	got, err := s.Get("new")
+	if err != nil {
+		t.Fatalf("Get(new) error = %v", err)
+	}
+	if got != "value" {
+		t.Fatalf("Get(new) = %q, want %q", got, "value")
+	}
+}
+
+func TestCleanupWorker_RemovesExpiredEntries(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("temporary", "value", 50*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+
+	s.StartCleanup(20 * time.Millisecond)
+	defer s.StopCleanup()
+
+	deadline := time.Now().Add(2 * time.Second)
+
+	for time.Now().Before(deadline) {
+		s.mu.RLock()
+		_, exists := s.data["temporary"]
+		s.mu.RUnlock()
+
+		if !exists {
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("cleanup worker did not remove expired entry before deadline")
+}
+
+func TestCleanupWorker_Stop(t *testing.T) {
+	s := NewStore(10, 0)
+
+	s.StartCleanup(10 * time.Millisecond)
+
+	// StopCleanup should wait for the worker to exit.
+	s.StopCleanup()
+
+	// Repeated calls should be safe.
+	s.StopCleanup()
+
+	// Starting again after stopping should not restart the worker.
+	s.StartCleanup(10 * time.Millisecond)
+
+	if !s.cleanupStopped {
+		t.Fatal("expected cleanup worker to be marked stopped")
+	}
+}
+
+func TestClone_IndependentCleanupWorker(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("temporary", "value", 100*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+
+	s.StartCleanup(10 * time.Millisecond)
+	defer s.StopCleanup()
+
+	cloned := s.Clone()
+
+	// The clone should have its own cleanup lifecycle.
+	cloned.StartCleanup(10 * time.Millisecond)
+	defer cloned.StopCleanup()
+
+	time.Sleep(200 * time.Millisecond)
+
+	s.mu.RLock()
+	_, originalExists := s.data["temporary"]
+	s.mu.RUnlock()
+
+	cloned.mu.RLock()
+	_, cloneExists := cloned.data["temporary"]
+	cloned.mu.RUnlock()
+
+	if originalExists {
+		t.Error("original store should have cleaned up the expired key")
+	}
+	if cloneExists {
+		t.Error("cloned store should have cleaned up the expired key")
+	}
+}
+
+func TestCleanupWorker_ConcurrentOperations(t *testing.T) {
+	s := NewStore(1000, 0)
+
+	s.StartCleanup(5 * time.Millisecond)
+	defer s.StopCleanup()
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+
+		go func(id int) {
+			defer wg.Done()
+
+			for j := 0; j < 100; j++ {
+				key := fmt.Sprintf("key-%d-%d", id, j)
+
+				if err := s.Set(key, "value", 10*time.Millisecond); err != nil {
+					t.Errorf("Set() error = %v", err)
+					return
+				}
+
+				_, _ = s.Get(key)
+				_ = s.Delete(key)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+}
+
+func TestCleanupWorker_StopAfterStart(t *testing.T) {
+	s := NewStore(10, 0)
+
+	s.StartCleanup(5 * time.Millisecond)
+	s.StopCleanup()
+
+	select {
+	case <-s.cleanupDone:
+		// Worker has exited.
+	default:
+		t.Fatal("cleanup worker has not exited")
+	}
+}
+
+func TestCleanupWorker_StopBeforeStart(t *testing.T) {
+	s := NewStore(10, 0)
+
+	s.StopCleanup()
+
+	select {
+	case <-s.cleanupDone:
+		// Shutdown completed successfully.
+	default:
+		t.Fatal("cleanupDone should be closed after stopping before start")
+	}
+
+	// Starting after stopping must not launch a worker.
+	s.StartCleanup(5 * time.Millisecond)
+}
+
+func TestCleanupWorker_StopMultipleTimes(t *testing.T) {
+	s := NewStore(10, 0)
+
+	s.StartCleanup(5 * time.Millisecond)
+
+	s.StopCleanup()
+	s.StopCleanup()
+	s.StopCleanup()
+}
+
+func TestCleanupWorker_RemovesExpiredKeys(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("temp", "value", 20*time.Millisecond); err != nil {
+		t.Fatalf("Set() error = %v", err)
+	}
+
+	s.StartCleanup(5 * time.Millisecond)
+	defer s.StopCleanup()
+
+	time.Sleep(50 * time.Millisecond)
+
+	s.mu.RLock()
+	_, exists := s.data["temp"]
+	s.mu.RUnlock()
+
+	if exists {
+		t.Fatal("cleanup worker did not physically remove expired key")
+	}
+}
+
+func TestClone_CleanupLifecycleIndependent(t *testing.T) {
+	original := NewStore(10, 0)
+	clone := original.Clone()
+
+	original.StartCleanup(5 * time.Millisecond)
+	clone.StartCleanup(5 * time.Millisecond)
+
+	original.StopCleanup()
+
+	// The clone's worker must still be running.
+	select {
+	case <-clone.cleanupDone:
+		t.Fatal("clone's cleanup worker stopped when original stopped")
+	default:
+	}
+
+	clone.StopCleanup()
+}
+
+func TestStore_WorksWithoutCleanupWorker(t *testing.T) {
+	s := NewStore(10, 0)
+
+	if err := s.Set("name", "redisGO", 0); err != nil {
+		t.Fatalf("Set() error = %v", err)
+	}
+
+	got, err := s.Get("name")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+
+	if got != "redisGO" {
+		t.Fatalf("Get() = %q, want %q", got, "redisGO")
+	}
+}

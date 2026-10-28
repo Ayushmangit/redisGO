@@ -15,6 +15,13 @@ type Store struct {
 	data    map[string]TTLentry
 	ttl     time.Duration
 	MaxSize int
+
+	cleanupStop     chan struct{}
+	cleanupDone     chan struct{}
+	cleanupDoneOnce sync.Once
+	cleanupMu       sync.Mutex
+	cleanupStarted  bool
+	cleanupStopped  bool
 }
 type TTLentry struct {
 	val    string
@@ -23,9 +30,11 @@ type TTLentry struct {
 
 func NewStore(MaxSize int, ttl time.Duration) *Store {
 	return &Store{
-		data:    make(map[string]TTLentry),
-		MaxSize: MaxSize,
-		ttl:     ttl,
+		data:        make(map[string]TTLentry),
+		MaxSize:     MaxSize,
+		ttl:         ttl,
+		cleanupStop: make(chan struct{}),
+		cleanupDone: make(chan struct{}),
 	}
 }
 
@@ -38,8 +47,11 @@ func (s *Store) Clone() *Store {
 	}
 
 	cloneStore := &Store{
-		data:    cloneMap,
-		MaxSize: s.MaxSize,
+		data:        cloneMap,
+		MaxSize:     s.MaxSize,
+		ttl:         s.ttl,
+		cleanupStop: make(chan struct{}),
+		cleanupDone: make(chan struct{}),
 	}
 	return cloneStore
 }
@@ -48,7 +60,11 @@ func (s *Store) Keys() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	keys := make([]string, 0, len(s.data))
-	for key := range s.data {
+	now := time.Now()
+	for key, entry := range s.data {
+		if !entry.expiry.IsZero() && !now.Before(entry.expiry) {
+			continue
+		}
 		keys = append(keys, key)
 	}
 	slices.Sort(keys)
@@ -75,8 +91,19 @@ func (s *Store) Set(key, val string, ttl time.Duration) error {
 	if key == "" {
 		return store.ErrInvalidKey
 	}
+	if ttl < 0 {
+		return fmt.Errorf("TTL: invalid ttl %w", store.ErrInvalidTTL)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	now := time.Now()
+	for k, entry := range s.data {
+		if !entry.expiry.IsZero() && !now.Before(entry.expiry) {
+			delete(s.data, k)
+		}
+	}
 
 	_, exists := s.data[key]
 
@@ -85,11 +112,9 @@ func (s *Store) Set(key, val string, ttl time.Duration) error {
 	}
 	var expiry time.Time
 	if ttl > 0 {
-		expiry = time.Now().Add(ttl)
+		expiry = now.Add(ttl)
 	} else if ttl == 0 {
 		expiry = time.Time{}
-	} else {
-		return fmt.Errorf("TTL: invalid ttl %w", store.ErrInvalidTTL)
 	}
 
 	s.data[key] = TTLentry{
@@ -99,46 +124,74 @@ func (s *Store) Set(key, val string, ttl time.Duration) error {
 	return nil
 }
 
-func (s *Store) Delete(key string) {
+func (s *Store) Delete(key string) error {
+	if key == "" {
+		return store.ErrInvalidKey
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.data, key)
+	return nil
 }
 
 func (s *Store) Len() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	len := 0
+	now := time.Now()
+	for _, entry := range s.data {
+		if !entry.expiry.IsZero() && !now.Before(entry.expiry) {
+			continue
+		}
+		len++
+	}
 
-	return len(s.data)
+	return len
 }
 
-func (s *Store) Rename(oldKey, newKey string) {
+func (s *Store) Rename(oldKey, newKey string) error {
 	if oldKey == "" || newKey == "" {
-		return
+		return store.ErrInvalidKey
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	val, exists := s.data[oldKey]
+	entry, exists := s.data[oldKey]
 	if !exists {
-		return
+		return store.ErrKeyNotFound
+	}
+	if !entry.expiry.IsZero() && !time.Now().Before(entry.expiry) {
+		delete(s.data, oldKey)
+		return store.ErrKeyNotFound
 	}
 
 	delete(s.data, oldKey)
-	s.data[newKey] = val
+	s.data[newKey] = entry
+	return nil
 }
 
-func (s *Store) Pop(key string) (string, bool) {
+func (s *Store) Pop(key string) (string, error) {
+	if key == "" {
+		return "", store.ErrInvalidKey
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	entry, ok := s.data[key]
+	if !ok {
+		return "", store.ErrKeyNotFound
+	}
+	now := time.Now()
+	if !entry.expiry.IsZero() && !now.Before(entry.expiry) {
+		delete(s.data, key)
+		return "", store.ErrKeyNotFound
+	}
 	if ok {
 		delete(s.data, key)
 	}
 
-	return entry.val, ok
+	return entry.val, nil
 }
 
 func (s *Store) Incr(key string) (int, error) {

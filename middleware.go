@@ -58,8 +58,8 @@ func (l *LoggingMiddleware) Rename(oldkey, newKey string) {
 	l.inner.Rename(oldkey, newKey)
 }
 
-func (l *LoggingMiddleware) Pop(key string) (string, bool) {
-	poped, ok := l.inner.Pop(key)
+func (l *LoggingMiddleware) Pop(key string) (string, error) {
+	poped, err := l.inner.Pop(key)
 	l.logger.Printf("POP %q -> VAL: %q ", key, poped)
-	return poped, ok
+	return poped, err
 }

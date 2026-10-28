@@ -17,10 +17,10 @@ type Storer interface {
 	Get(key string) (string, error)
 	Set(key string, value string, ttl time.Duration) error
 	Keys() []string
-	Delete(key string)
+	Delete(key string) error
 	Len() int
-	Rename(oldkey, newKey string)
-	Pop(key string) (string, bool)
+	Rename(oldkey, newKey string) error
+	Pop(key string) (string, error)
 	Incr(key string) (int, error)
 }
 

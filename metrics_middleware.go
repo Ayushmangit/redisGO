@@ -69,7 +69,7 @@ func (m *MetricsMiddleware) Rename(oldkey, newKey string) {
 	m.inner.Rename(oldkey, newKey)
 }
 
-func (m *MetricsMiddleware) Pop(key string) (string, bool) {
+func (m *MetricsMiddleware) Pop(key string) (string, error) {
 	m.popCalls += 1
 	return m.inner.Pop(key)
 }
