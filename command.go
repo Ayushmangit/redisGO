@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/Ayushmangit/redisGO/store"
@@ -14,19 +16,25 @@ type Command struct {
 	Value string
 }
 
-func dispatch(s store.Storer, c Command) error {
-	switch c.OP {
+func dispatch(s store.Storer, c Command) (string, error) {
+	switch strings.ToUpper(c.OP) {
 	case "GET":
-		s.Get(c.Key)
+		return s.Get(c.Key)
 	case "SET":
-		return s.Set(c.Key, c.Value, 0)
+		if err := s.Set(c.Key, c.Value, 0); err != nil {
+			return "", err
+		}
+		return "OK", nil
 	case "INCR":
-		_, err := s.Incr(c.Key)
-		return err
+		n, err := s.Incr(c.Key)
+		if err != nil {
+			return "", err
+		}
+		return strconv.Itoa(n), nil
+
 	default:
-		return fmt.Errorf("Invalid command :[%v]", c.OP)
+		return "", fmt.Errorf("Invalid command :[%v]", c.OP)
 	}
-	return nil
 }
 
 func RestoreOnBoot(s store.Storer, cmds []Command) {
@@ -34,7 +42,8 @@ func RestoreOnBoot(s store.Storer, cmds []Command) {
 	errs := make(chan error, len(cmds)) // no blocking till len(cmds)
 	for _, command := range cmds {
 		wg.Go(func() {
-			errs <- dispatch(s, command)
+			_, err := dispatch(s, command)
+			errs <- err
 		})
 	}
 	go func() {

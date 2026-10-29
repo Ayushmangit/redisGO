@@ -14,7 +14,7 @@ func (s *Store) cleanupExpired() {
 }
 
 func (s *Store) StartCleanup(interval time.Duration) {
-	if interval < 0 {
+	if interval <= 0 {
 		panic("cleanup interval must be positive")
 	}
 
