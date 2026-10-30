@@ -34,16 +34,9 @@ func main() {
 			return
 		}
 
-		command, err := ParseCommand(input)
+		res, err := HandleInput(exec, input)
 		if err != nil {
-			fmt.Printf("(error) PARSING: %v\n", err)
-			continue
-		}
-
-		res, err := exec.Execute(command)
-		if err != nil {
-			fmt.Printf("(error) EXECUTE: %v\n", err)
-			continue
+			fmt.Printf("(error) %v\n", err)
 		}
 
 		fmt.Println(res)
