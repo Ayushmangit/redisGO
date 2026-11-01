@@ -21,11 +21,10 @@ func TestExecutor_SetThenGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SET failed: %v", err)
 	}
-	if got != "OK" {
-		t.Fatalf("SET returned %q, want %q", got, "OK")
+	if got.responseType != SimpleString || got.val != "OK" {
+		t.Fatalf("unexpected SET response: %+v", got)
 	}
 
-	// GET name
 	got, err = executor.Execute(Command{
 		OP:  "GET",
 		Key: "name",
@@ -33,8 +32,8 @@ func TestExecutor_SetThenGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET failed: %v", err)
 	}
-	if got != "redis" {
-		t.Fatalf("GET returned %q, want %q", got, "redis")
+	if got.responseType != BulkString || got.val != "redis" {
+		t.Fatalf("unexpected GET response: %+v", got)
 	}
 }
 
@@ -94,7 +93,7 @@ func TestExecutor_ConcurrentExecution(t *testing.T) {
 		t.Fatalf("GET failed: %v", err)
 	}
 
-	if got != "50" {
-		t.Fatalf("counter = %q, want %q", got, "50")
+	if got.responseType != BulkString || got.val != "50" {
+		t.Fatalf("counter = %q, want %q", got.val, "50")
 	}
 }

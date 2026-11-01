@@ -27,8 +27,7 @@ const (
 	bulkStringHeader    = "$"
 	arrayHeader         = "*"
 
-	registeredNurse = "\r\n"
-
+	registeredNurse    = "\r\n"
 	emptyArrayResponse = "*0\r\n"
 	nullBulkString     = "$-1\r\n"
 )

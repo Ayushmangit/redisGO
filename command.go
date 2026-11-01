@@ -1,8 +1,8 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -16,24 +16,33 @@ type Command struct {
 	Value string
 }
 
-func dispatch(s store.Storer, c Command) (string, error) {
+func dispatch(s store.Storer, c Command) (*Response, error) {
 	switch strings.ToUpper(c.OP) {
 	case "GET":
-		return s.Get(c.Key)
+		value, err := s.Get(c.Key)
+		if err != nil {
+			if errors.Is(err, store.ErrKeyNotFound) {
+				return NewNullBulkString(), nil
+			}
+			return NewError(err.Error()), nil
+		}
+		return NewBulkString(value), nil
+
 	case "SET":
 		if err := s.Set(c.Key, c.Value, 0); err != nil {
-			return "", err
+			return NewError(err.Error()), nil
 		}
-		return "OK", nil
+		return NewSimpleString("OK"), nil
+
 	case "INCR":
 		n, err := s.Incr(c.Key)
 		if err != nil {
-			return "", err
+			return NewError(err.Error()), nil
 		}
-		return strconv.Itoa(n), nil
+		return NewInteger(int64(n)), nil
 
 	default:
-		return "", fmt.Errorf("Invalid command :[%v]", c.OP)
+		return NewError(fmt.Sprintf("Invalid command: [%v]", c.OP)), nil
 	}
 }
 

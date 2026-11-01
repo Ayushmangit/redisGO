@@ -15,8 +15,8 @@ type commandRequest struct {
 }
 
 type commandResult struct {
-	value string
-	err   error
+	response *Response
+	err      error
 }
 
 type Executor struct {
@@ -45,17 +45,17 @@ func (e *Executor) run() {
 	defer close(e.done)
 
 	for req := range e.commands {
-		value, err := dispatch(e.store, req.command)
-		req.result <- commandResult{value: value, err: err}
+		response, err := dispatch(e.store, req.command)
+		req.result <- commandResult{response: response, err: err}
 	}
 }
 
-func (e *Executor) Execute(c Command) (string, error) {
+func (e *Executor) Execute(c Command) (*Response, error) {
 	result := make(chan commandResult, 1)
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
-		return "", ErrExecutorStopped
+		return nil, ErrExecutorStopped
 	}
 	e.commands <- commandRequest{
 		command: c,
@@ -63,7 +63,7 @@ func (e *Executor) Execute(c Command) (string, error) {
 	}
 	e.mu.Unlock()
 	res := <-result
-	return res.value, res.err
+	return res.response, res.err
 }
 
 func (e *Executor) Stop() {

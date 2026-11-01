@@ -12,13 +12,14 @@ func TestHandleInput(t *testing.T) {
 	defer executor.Stop()
 
 	tests := []struct {
-		input string
-		want  string
+		input    string
+		wantType ResponseType
+		wantVal  string
 	}{
-		{"SET name redis", "OK"},
-		{"GET name", "redis"},
-		{"INCR counter", "1"},
-		{"GET counter", "1"},
+		{"SET name redis", SimpleString, "OK"},
+		{"GET name", BulkString, "redis"},
+		{"INCR counter", Integer, ""},
+		{"GET counter", BulkString, "1"},
 	}
 
 	for _, tt := range tests {
@@ -27,8 +28,12 @@ func TestHandleInput(t *testing.T) {
 			if err != nil {
 				t.Fatalf("HandleInput() error = %v", err)
 			}
-			if got != tt.want {
-				t.Fatalf("HandleInput() = %q, want %q", got, tt.want)
+			if got.responseType != tt.wantType {
+				t.Fatalf("response type = %v, want %v", got.responseType, tt.wantType)
+			}
+
+			if tt.wantVal != "" && got.val != tt.wantVal {
+				t.Fatalf("response value = %q, want %q", got.val, tt.wantVal)
 			}
 		})
 	}
