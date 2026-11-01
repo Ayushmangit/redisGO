@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Ayushmangit/redisGO/protocol"
 	"github.com/Ayushmangit/redisGO/store"
 )
 
@@ -66,3 +67,6 @@ func RestoreOnBoot(s store.Storer, cmds []Command) {
 		}
 	}
 }
+
+// TODO:
+func ValueToCommand(value protocol.Value) (Command, error)
