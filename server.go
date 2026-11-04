@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+
+	"github.com/Ayushmangit/redisGO/protocol"
 )
 
 func StartTCPServer(addr string) (net.Listener, error) {
@@ -15,32 +17,59 @@ func StartTCPServer(addr string) (net.Listener, error) {
 	return ln, nil
 }
 
-func AcceptLoop(ln net.Listener) error {
-	// Loop because i dont want to stop after connecting only one peer
+func AcceptLoop(ln net.Listener, executor *Executor) error {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			return err
 		}
-		if err := HandlePeer(conn); err != nil {
-			conn.Close()
-			return err
-		}
+
 		fmt.Printf("The Peer is Connected: %v\n", conn.RemoteAddr())
-		conn.Close()
+
+		go func(conn net.Conn) {
+			defer conn.Close()
+
+			if err := HandlePeer(conn, executor); err != nil {
+				fmt.Printf("Error handling peer %v: %v\n", conn.RemoteAddr(), err)
+			}
+		}(conn)
 	}
 }
 
-func HandlePeer(conn net.Conn) error {
-	buf := make([]byte, 1024)
+func HandlePeer(conn net.Conn, executor *Executor) error {
+	decoder := protocol.NewDecoder(conn)
 	for {
-		n, err := conn.Read(buf)
+		value, err := decoder.Decode()
 		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%v", string(buf[:n]))
+		command, err := ValueToCommand(value)
+		if err != nil {
+			res := NewError(err.Error())
+			resBytes, err := res.Encode()
+			if err != nil {
+				return err
+			}
+			if _, err := conn.Write(resBytes); err != nil {
+				return err
+			}
+			continue
+		}
+		response, err := executor.Execute(command)
+		if err != nil {
+			return err
+		}
+		resBytes, err := response.Encode()
+		if err != nil {
+			return err
+		}
+		if _, err := conn.Write(resBytes); err != nil {
+			return err
+		}
+		fmt.Printf("%+v\n", response)
+
 	}
 }

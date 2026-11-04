@@ -12,7 +12,7 @@ import (
 
 var (
 	ErrInvalidCommandLength = errors.New("invalid command length")
-	ErrUnknownCommand       = errors.New("unknown command error")
+	ErrUnknownCommand       = errors.New("unknown command")
 )
 
 // waitgroups use with go routines
