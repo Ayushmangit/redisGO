@@ -10,6 +10,11 @@ import (
 	"github.com/Ayushmangit/redisGO/store"
 )
 
+var (
+	ErrInvalidCommandLength = errors.New("invalid command length")
+	ErrUnknownCommand       = errors.New("unknown command error")
+)
+
 // waitgroups use with go routines
 type Command struct {
 	OP    string
@@ -69,4 +74,59 @@ func RestoreOnBoot(s store.Storer, cmds []Command) {
 }
 
 // TODO:
-func ValueToCommand(value protocol.Value) (Command, error)
+func ValueToCommand(value protocol.Value) (Command, error) {
+	if value.Type != protocol.Array {
+		return Command{}, fmt.Errorf("invalid value needs an array")
+	}
+	if len(value.Array) == 0 {
+		return Command{}, fmt.Errorf("invalid length of the array")
+	}
+
+	for _, elm := range value.Array {
+		if elm.Type != protocol.BulkString || elm.Num == -1 {
+			return Command{}, fmt.Errorf("invalid command entry")
+		}
+	}
+	args := make([]string, 0)
+	for _, elm := range value.Array {
+		args = append(args, elm.Str)
+	}
+	command := Command{}
+	operationNormalized := strings.ToUpper(args[0])
+
+	switch operationNormalized {
+	case "GET":
+		if len(args) != 2 {
+			return Command{}, ErrInvalidCommandLength
+		}
+		if len(args[1]) == 0 {
+			return Command{}, fmt.Errorf("invalid key length")
+		}
+		command.OP = operationNormalized
+		command.Key = args[1]
+
+	case "SET":
+		if len(args) != 3 {
+			return Command{}, ErrInvalidCommandLength
+		}
+		if len(args[1]) == 0 {
+			return Command{}, fmt.Errorf("invalid key length")
+		}
+		command.OP = operationNormalized
+		command.Key = args[1]
+		command.Value = args[2]
+	case "INCR":
+		if len(args) != 2 {
+			return Command{}, ErrInvalidCommandLength
+		}
+		if len(args[1]) == 0 {
+			return Command{}, fmt.Errorf("invalid key length")
+		}
+		command.OP = operationNormalized
+		command.Key = args[1]
+	default:
+		return Command{}, ErrUnknownCommand
+	}
+
+	return command, nil
+}

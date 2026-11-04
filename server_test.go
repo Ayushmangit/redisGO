@@ -37,7 +37,6 @@ func TestHandlePeer(t *testing.T) {
 	defer client.Close()
 
 	want := "SET name redis"
-
 	done := make(chan error, 1)
 
 	go func() {
@@ -47,6 +46,9 @@ func TestHandlePeer(t *testing.T) {
 	_, err := client.Write([]byte(want))
 	if err != nil {
 		t.Fatalf("client write failed: %v", err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("client close failed: %v", err)
 	}
 
 	select {
