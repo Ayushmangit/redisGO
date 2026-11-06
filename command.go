@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Ayushmangit/redisGO/protocol"
 	"github.com/Ayushmangit/redisGO/store"
@@ -35,7 +36,7 @@ func dispatch(s store.Storer, c Command) (*Response, error) {
 		return NewBulkString(value), nil
 
 	case "SET":
-		if err := s.Set(c.Key, c.Value, 0); err != nil {
+		if err := s.Set(c.Key, c.Value, 1*time.Hour); err != nil {
 			return NewError(err.Error()), nil
 		}
 		return NewSimpleString("OK"), nil

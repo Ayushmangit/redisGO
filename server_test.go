@@ -227,3 +227,36 @@ func TestAcceptLoopHandlesClientsConcurrently(t *testing.T) {
 		t.Fatalf("store.Get() = %q, want %q", value, "redis")
 	}
 }
+
+func TestAcceptLoopGracefulShutdown(t *testing.T) {
+	store := kv.NewStore(1000, 0)
+	executor := NewExecutor(store, 1000)
+	defer executor.Stop()
+
+	ln, err := StartTCPServer("127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("StartTCPServer() error = %v", err)
+	}
+
+	done := make(chan error, 1)
+
+	go func() {
+		done <- AcceptLoop(ln, executor)
+	}()
+
+	// Allow AcceptLoop to start before closing the listener.
+	time.Sleep(20 * time.Millisecond)
+
+	if err := ln.Close(); err != nil {
+		t.Fatalf("listener close failed: %v", err)
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("AcceptLoop() error = %v, want nil", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("AcceptLoop() did not shut down in time")
+	}
+}

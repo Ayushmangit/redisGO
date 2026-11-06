@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"sync"
 
 	"github.com/Ayushmangit/redisGO/protocol"
 )
@@ -18,15 +20,36 @@ func StartTCPServer(addr string) (net.Listener, error) {
 }
 
 func AcceptLoop(ln net.Listener, executor *Executor) error {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	clients := make(map[net.Conn]struct{})
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			mu.Lock()
+			for conn := range clients {
+				_ = conn.Close()
+			}
+			mu.Unlock()
+			wg.Wait()
+			if errors.Is(err, net.ErrClosed) {
+				return nil
+			}
 			return err
 		}
+		mu.Lock()
+		clients[conn] = struct{}{}
+		mu.Unlock()
 
 		fmt.Printf("The Peer is Connected: %v\n", conn.RemoteAddr())
-
+		wg.Add(1)
 		go func(conn net.Conn) {
+			defer wg.Done()
+			defer func() {
+				mu.Lock()
+				delete(clients, conn)
+				mu.Unlock()
+			}()
 			defer conn.Close()
 
 			if err := HandlePeer(conn, executor); err != nil {
